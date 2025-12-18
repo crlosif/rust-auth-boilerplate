@@ -1,5 +1,8 @@
 #[macro_use] extern crate rocket;
 
+mod models;
+mod migrations;
+
 use rocket_db_pools::{Database, Connection};
 use rocket_db_pools::sqlx::{self, Row};
 
@@ -23,7 +26,13 @@ async fn main() -> Result<(), rocket::Error> {
     
     // Configure Rocket with the database URL from .env
     let figment = rocket::Config::figment()
-        .merge(("databases.postgres.url", database_url));
+        .merge(("databases.postgres.url", database_url.clone()));
+    
+    // Run migrations before starting the server
+    let pool = sqlx::PgPool::connect(&database_url).await
+        .expect("Failed to connect to database");
+    migrations::run_migrations(&pool).await
+        .expect("Failed to run migrations");
     
     let _rocket = rocket::custom(figment)
         .attach(Postgres::init())
