@@ -1,0 +1,4 @@
+[default]
+# This will read DATABASE_URL from environment variables
+[default.databases.postgres]
+postgres = { url = "ROCKET_DATABASE_URL" }
