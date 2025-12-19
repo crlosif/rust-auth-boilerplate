@@ -2,9 +2,12 @@
 
 mod models;
 mod migrations;
+mod routes;
 
-use rocket_db_pools::{Database, Connection};
-use rocket_db_pools::sqlx::{self, Row};
+use rocket_db_pools::Database;
+use sqlx;
+
+use routes::auth;
 
 #[derive(Database)]
 #[database("postgres")]
@@ -37,6 +40,7 @@ async fn main() -> Result<(), rocket::Error> {
     let _rocket = rocket::custom(figment)
         .attach(Postgres::init())
         .mount("/", routes![index])
+        .mount("/api/auth", routes![auth::register, auth::login])
         .launch()
         .await?;
     
