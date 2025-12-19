@@ -3,11 +3,14 @@
 mod models;
 mod migrations;
 mod routes;
+mod auth;
+mod errors;
 
 use rocket_db_pools::Database;
 use sqlx;
+use rocket_cors::CorsOptions;
 
-use routes::auth;
+use routes::auth as auth_routes;
 
 #[derive(Database)]
 #[database("postgres")]
@@ -37,10 +40,34 @@ async fn main() -> Result<(), rocket::Error> {
     migrations::run_migrations(&pool).await
         .expect("Failed to run migrations");
     
+    // Configure CORS
+    let cors = CorsOptions::default()
+        .allowed_origins(rocket_cors::AllowedOrigins::all())
+        .allowed_methods(
+            vec![rocket::http::Method::Get, rocket::http::Method::Post]
+                .into_iter()
+                .map(From::from)
+                .collect(),
+        )
+        .allowed_headers(rocket_cors::AllowedHeaders::some(&[
+            "Authorization",
+            "Accept",
+            "Content-Type",
+        ]))
+        .allow_credentials(true)
+        .to_cors()
+        .expect("Failed to create CORS fairing");
+
     let _rocket = rocket::custom(figment)
         .attach(Postgres::init())
+        .attach(cors)
         .mount("/", routes![index])
-        .mount("/api/auth", routes![auth::register, auth::login])
+        .mount("/api/auth", routes![
+            auth_routes::register,
+            auth_routes::login,
+            auth_routes::forgot_password,
+            auth_routes::reset_password
+        ])
         .launch()
         .await?;
     
