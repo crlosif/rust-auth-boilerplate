@@ -5,6 +5,8 @@ use rocket_db_pools::Connection;
 
 use crate::models::user::{User, NewUser, LoginUser};
 use crate::Postgres;
+use crate::auth::jwt::JwtService;
+use crate::auth::guard::AuthenticatedUser;
 
 /// Register a new user
 #[post("/register", data = "<new_user>")]
@@ -146,10 +148,24 @@ pub async fn login(
     // Verify password
     match User::verify_password(&login_user.password, &user.password_hash) {
         Ok(true) => {
+            // Generate JWT token
+            let token = match JwtService::generate_token(user.id.to_string()) {
+                Ok(t) => t,
+                Err(_) => {
+                    return Err(status::Custom(
+                        Status::InternalServerError,
+                        Json(json!({
+                            "error": "Failed to generate token"
+                        })),
+                    ));
+                }
+            };
+
             Ok(status::Custom(
                 Status::Ok,
                 Json(json!({
                     "message": "Login successful",
+                    "token": token,
                     "user": {
                         "id": user.id.to_string(),
                         "email": user.email,
@@ -171,6 +187,53 @@ pub async fn login(
                 Status::InternalServerError,
                 Json(json!({
                     "error": "Failed to verify password"
+                })),
+            ))
+        }
+    }
+}
+
+/// Protected route example - requires authentication
+#[get("/me")]
+pub async fn get_current_user(
+    user: AuthenticatedUser,
+    mut db: Connection<Postgres>,
+) -> Result<status::Custom<Json<Value>>, status::Custom<Json<Value>>> {
+    // Find user by ID from token
+    let result = sqlx::query_as::<_, User>(
+        "SELECT id, email, password_hash, created_at, updated_at FROM users WHERE id = $1"
+    )
+    .bind(&user.user_id)
+    .fetch_optional(&mut **db)
+    .await;
+
+    match result {
+        Ok(Some(user_data)) => {
+            Ok(status::Custom(
+                Status::Ok,
+                Json(json!({
+                    "user": {
+                        "id": user_data.id.to_string(),
+                        "email": user_data.email,
+                        "created_at": user_data.created_at.to_rfc3339()
+                    }
+                })),
+            ))
+        }
+        Ok(None) => {
+            Err(status::Custom(
+                Status::NotFound,
+                Json(json!({
+                    "error": "User not found"
+                })),
+            ))
+        }
+        Err(e) => {
+            eprintln!("Database error: {}", e);
+            Err(status::Custom(
+                Status::InternalServerError,
+                Json(json!({
+                    "error": "Database error occurred"
                 })),
             ))
         }
